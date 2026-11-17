@@ -1,0 +1,56 @@
+name: Sync docs to GitHub Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - docs/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-wiki-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sync docs to wiki
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$WIKI_TOKEN" ]]; then
+            echo "::error::Set the WIKI_TOKEN Actions secret to a token with write access to the repository wiki."
+            exit 1
+          fi
+
+          wiki_dir="$(mktemp -d)"
+          trap 'rm -rf "$wiki_dir"' EXIT
+
+          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WIKI_TOKEN" | base64 -w 0)" \
+            clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" "$wiki_dir"
+
+          git -C "$wiki_dir" ls-files -z |
+            xargs -0 -r git -C "$wiki_dir" rm -f --
+          cp -a docs/. "$wiki_dir/"
+
+          git -C "$wiki_dir" add --all
+          if git -C "$wiki_dir" diff --cached --quiet; then
+            echo "Wiki is already up to date."
+            exit 0
+          fi
+
+          git -C "$wiki_dir" config user.name "github-actions[bot]"
+          git -C "$wiki_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$wiki_dir" commit -m "Sync wiki from docs"
+          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WIKI_TOKEN" | base64 -w 0)" \
+            -C "$wiki_dir" push
