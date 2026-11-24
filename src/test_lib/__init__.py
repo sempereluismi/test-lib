@@ -12,3 +12,7 @@ def resta(a: int, b: int) -> int:
 
 def saludar(nombre: str) -> str:
     return f"Hola, {nombre}!"
+
+
+def hola(hola: str) -> str:
+    return f"hola, {hola}"
